@@ -1,0 +1,9 @@
+[package]
+name = "eink-reader-cli-probe"
+description = "G1 smoke test: proves the cross-compiled binary runs on the Kindle without touching the display"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]

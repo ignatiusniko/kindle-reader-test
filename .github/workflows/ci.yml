@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  host:
+    name: Host checks (fmt, clippy, tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: System fonts for the headless UI test
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  musl-memory:
+    name: MEM-01 on musl (allocator regression guard)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install ziglang==0.17.1 && cargo install cargo-zigbuild --locked
+      - run: scripts/musl-memtest.sh 2000
+
+  kindle-cross:
+    name: Cross-build for Kindle (armv7 musl)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-musleabihf
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install ziglang==0.17.1 && cargo install cargo-zigbuild --locked
+      - name: Redistributable font
+        run: sudo apt-get update && sudo apt-get install -y fonts-dejavu-core && scripts/fetch-font.sh
+      - run: scripts/build-kindle.sh armv7-unknown-linux-musleabihf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eink-reader-dev-armv7
+          path: dist/eink-reader-dev
+          retention-days: 14

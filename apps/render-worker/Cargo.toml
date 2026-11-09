@@ -1,0 +1,19 @@
+[package]
+name = "render-worker"
+description = "Isolated page-decode process (Milestone B / M3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+reader-core.workspace = true
+memory-budget.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+test-fixtures.workspace = true
+image-pipeline.workspace = true
+
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc.workspace = true

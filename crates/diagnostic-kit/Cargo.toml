@@ -1,0 +1,10 @@
+[package]
+name = "diagnostic-kit"
+description = "Process memory sampling, stage timings and a size-bounded local log"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+memory-budget.workspace = true

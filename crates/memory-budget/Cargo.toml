@@ -1,0 +1,9 @@
+[package]
+name = "memory-budget"
+description = "Checked size arithmetic, resource limits and reservation-based memory budgets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
