@@ -1,0 +1,34 @@
+{
+    "items": [
+        {
+            "name": "E-Ink Reader (Experimental)",
+            "priority": -5,
+            "items": [
+                {
+                    "name": "Open reader",
+                    "priority": 1,
+                    "action": "/bin/sh",
+                    "params": "/mnt/us/extensions/eink-reader/bin/launch.sh reader",
+                    "exitmenu": true,
+                    "status": false
+                },
+                {
+                    "name": "Open reader (with timing log)",
+                    "priority": 2,
+                    "action": "/bin/sh",
+                    "params": "/mnt/us/extensions/eink-reader/bin/launch.sh reader-log",
+                    "exitmenu": true,
+                    "status": false
+                },
+                {
+                    "name": "Hardware test window",
+                    "priority": 3,
+                    "action": "/bin/sh",
+                    "params": "/mnt/us/extensions/eink-reader/bin/launch.sh hwtest",
+                    "exitmenu": true,
+                    "status": false
+                }
+            ]
+        }
+    ]
+}

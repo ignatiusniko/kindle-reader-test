@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension>
+    <information>
+        <name>E-Ink Reader</name>
+        <id>eink-reader</id>
+        <version>0.1</version>
+        <author>kindle-reader-test</author>
+    </information>
+    <menus>
+        <menu type="json" dynamic="true">menu.json</menu>
+    </menus>
+</extension>

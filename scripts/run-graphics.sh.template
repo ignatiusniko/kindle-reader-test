@@ -13,6 +13,7 @@ set -u
 VERIFIED=0                                   # set to 1 only after G3 passes
 DIR='/mnt/us/eink-reader-dev'
 APP="${APP:-$DIR/eink-reader}"               # or $DIR/eink-reader-m0 for G4
+APP_ARGS="${APP_ARGS:-}"                     # e.g. --log
 LOG="$DIR/logs/ui.log"
 PIDFILE="$DIR/logs/app.pid"
 LOCK="$DIR/logs/launcher.lock"
@@ -34,11 +35,19 @@ restore_display() {
 # --------------------------------------------------------------------------
 [ "$VERIFIED" = 1 ] || { echo 'refusing to run: template not verified (G3)' >&2; exit 1; }
 
-# Single instance: mkdir is atomic on every filesystem we care about.
+# Single instance (mkdir is atomic). A stale lock from a power loss or
+# SIGKILL is detected through the PID stored inside it.
+mkdir -p "$DIR/logs"
 if ! mkdir "$LOCK" 2>/dev/null; then
-    echo "another launcher is active (remove $LOCK if stale)" >&2
-    exit 1
+    old="$(cat "$LOCK/pid" 2>/dev/null || true)"
+    if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+        echo "another launcher is running (pid $old)" >&2
+        exit 1
+    fi
+    rm -rf "$LOCK"
+    mkdir "$LOCK" || exit 1
 fi
+echo $$ >"$LOCK/pid"
 
 CLEANED=0
 cleanup() {
@@ -57,14 +66,15 @@ cleanup() {
         rm -f "$PIDFILE"
     fi
     restore_display || echo 'WARNING: restore_display failed — use the recovery runbook' >&2
-    rmdir "$LOCK" 2>/dev/null
+    rm -rf "$LOCK"
 }
 trap 'cleanup' EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM HUP
 
 handoff_display || exit 1
-"$APP" >>"$LOG" 2>&1 &
+# shellcheck disable=SC2086
+"$APP" $APP_ARGS >>"$LOG" 2>&1 &
 echo $! >"$PIDFILE"
 wait $!
 status=$?

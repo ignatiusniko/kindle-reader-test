@@ -3,13 +3,12 @@
 A minimal, offline CBZ manga reader for E-Ink Kindles, written in Rust with a
 Slint software-rendered UI. Built from *E-Ink Reader — Technical Spec v0.3*.
 
-> **Status: experimental. Nothing here has run on a Kindle Basic 2022
-> (KT5 / Cava / C2V2L3) yet.** The host-side reader, decoder, memory policy,
-> worker isolation and UI are implemented and tested on a development
-> machine, and every binary cross-compiles to a static ARMv7 musl ELF. The
-> device gates G0–G7 still have to be run on real hardware, in order. Do not
-> launch a graphical binary on the Kindle until gate G3 (display hand-off and
-> restore) has been established for *your* firmware.
+> **Status: experimental.** First device run on 2026-11-09: on one Kindle
+> Basic 2022 (KT5) with firmware 5.18.5.0.1, the launcher's hand-off and
+> restore were rehearsed, and the hardware test window and the reader opened
+> and read CBZ books. Long-session memory, sleep/resume and the remaining
+> G4–G7 checks have **not** been run yet (docs/test-results/). On any other
+> model or firmware, re-establish gate G3 before launching anything.
 
 ## What works today (host-verified)
 
@@ -27,7 +26,9 @@ Slint software-rendered UI. Built from *E-Ink Reader — Technical Spec v0.3*.
 | Clean exit on SIGTERM/SIGINT/SIGHUP (progress flushed, launcher restore can run) | implemented |
 | ARMv7 musl cross-build (`cargo zigbuild`) of all binaries | ✅ built; CLI probe and worker run under `qemu-arm` |
 | musl allocator fragmentation found in MEM-01 → mimalloc on musl builds | ✅ fixed and re-measured (see `docs/decisions/0003-allocator-on-musl.md`) |
-| Display, touch, refresh, sleep/resume, Kindle UI hand-off on KT5 | ❌ **not tested — device gates G0–G7** |
+| Launcher hand-off/restore, display, touch and CBZ reading on KT5 (fw 5.18.5.0.1) | ✅ first manual run on one device |
+| KUAL menu entry (Open reader / timing log / hardware test) | ✅ host-tested (`scripts/test-launcher.sh`); first device run pending |
+| Long-session memory, sleep/resume, 50× open/exit, battery on KT5 | ❌ **not tested yet — G4–G7** |
 
 ## Repository layout
 
@@ -36,6 +37,7 @@ apps/cli-probe        G1 smoke test (no display)
 apps/kindle-hwtest    G2/G4 Slint test window: tap counter + exit (eink-reader-m0)
 apps/kindle-reader    The reader UI (eink-reader); features: kindle | desktop
 apps/render-worker    Isolated decode process (M3)
+kual/eink-reader      KUAL menu entry (calls the verified launcher)
 crates/memory-budget  Checked size math, limits, reservations, /proc/meminfo
 crates/cbz-reader     Metadata-only index + bounded entry reads
 crates/image-pipeline JPEG/PNG → display-sized Gray8 under a budget
@@ -83,12 +85,20 @@ cargo run -p eink-reader --features desktop -- --books books --data /tmp/eink-da
    `/mnt/us/eink-reader-dev` with checksum verification and a `.previous`
    rollback copy. It never launches anything.
 6. On the device, run `sh g1-cli-repeat.sh` (G1). Expect `G1_CLI_REPEAT_OK`.
-7. **Stop.** Graphics need G3: write and rehearse `handoff_display` /
-   `restore_display` in `run-graphics.sh.template` and fill in
-   `scripts/sample-recovery-checklist.md`. See `docs/safety-and-recovery.md`.
+7. Graphics need gate G3. For **KT5 on firmware 5.18.5.0.1** the deploy
+   step installs the device-verified launcher `run-graphics.sh`
+   (`scripts/run-graphics-kt5.sh`). Rehearse it once on your device:
+   `ssh kindle 'cd /mnt/us/eink-reader-dev && MODE=rehearse sh run-graphics.sh'`.
+   For other models/firmware, start from `run-graphics.sh.template` and
+   `scripts/sample-recovery-checklist.md` (`docs/safety-and-recovery.md`).
+8. Start it from the Kindle: **KUAL → E-Ink Reader (Experimental) → Open
+   reader**. Leave with **Exit** on the Library screen; the Kindle UI comes
+   back. Or over SSH: `ssh kindle 'cd /mnt/us/eink-reader-dev && sh run-graphics.sh'`
+   (`APP_ARGS=--log` for timings, `APP=./eink-reader-m0` for the test window).
 
-The project deliberately ships **no** command that stops Amazon services,
-remounts partitions, edits `/etc` or autostarts at boot.
+The launcher pauses the Kindle UI processes only while the app runs and
+resumes them on every exit path. Nothing autostarts at boot, and nothing
+edits `/etc`, system partitions or KOReader.
 
 ## Runtime options
 
