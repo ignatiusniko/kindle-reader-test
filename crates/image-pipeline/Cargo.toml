@@ -1,0 +1,15 @@
+[package]
+name = "image-pipeline"
+description = "Bounded JPEG/PNG decode straight into display-sized Gray8 buffers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+memory-budget.workspace = true
+jpeg-decoder.workspace = true
+png.workspace = true
+
+[dev-dependencies]
+jpeg-encoder.workspace = true

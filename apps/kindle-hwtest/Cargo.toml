@@ -1,0 +1,16 @@
+[package]
+name = "eink-reader-m0"
+description = "G2/G4 hardware test window: one tap counter and an exit button, no documents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+kindle = ["dep:slint-backend-kindle"]
+desktop = ["slint/backend-winit"]
+
+[dependencies]
+slint.workspace = true
+slint-backend-kindle = { workspace = true, optional = true }

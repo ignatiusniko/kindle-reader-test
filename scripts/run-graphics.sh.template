@@ -1,0 +1,72 @@
+#!/bin/sh
+# TEMPLATE — DO NOT RUN UNTIL handoff_display AND restore_display ARE
+# IMPLEMENTED, REVIEWED AND REHEARSED ON *YOUR* FIRMWARE (spec §21, gate G3).
+#
+# This file deliberately contains no Amazon process names, no SIGSTOP/SIGCONT
+# sequence, no lipc calls and no service changes: those are firmware-specific
+# and must come from your own G3 investigation (docs/safety-and-recovery.md).
+#
+# Once implemented, copy to run-graphics.sh, set VERIFIED=1, and launch only
+# while an independent SSH session is open.
+set -u
+
+VERIFIED=0                                   # set to 1 only after G3 passes
+DIR='/mnt/us/eink-reader-dev'
+APP="${APP:-$DIR/eink-reader}"               # or $DIR/eink-reader-m0 for G4
+LOG="$DIR/logs/ui.log"
+PIDFILE="$DIR/logs/app.pid"
+LOCK="$DIR/logs/launcher.lock"
+
+handoff_display() {
+    # Device-specific: make the Kindle UI stop drawing to /dev/fb0 and stop
+    # consuming touch input, in a way restore_display can undo.
+    echo 'ERROR: device-specific handoff not implemented' >&2
+    return 1
+}
+
+restore_display() {
+    # Device-specific: exact inverse of handoff_display, safe to call even if
+    # handoff_display only partially succeeded. Must be idempotent.
+    echo 'ERROR: device-specific restore not implemented' >&2
+    return 1
+}
+
+# --------------------------------------------------------------------------
+[ "$VERIFIED" = 1 ] || { echo 'refusing to run: template not verified (G3)' >&2; exit 1; }
+
+# Single instance: mkdir is atomic on every filesystem we care about.
+if ! mkdir "$LOCK" 2>/dev/null; then
+    echo "another launcher is active (remove $LOCK if stale)" >&2
+    exit 1
+fi
+
+CLEANED=0
+cleanup() {
+    # Runs exactly once, whatever path we exit through.
+    [ "$CLEANED" = 1 ] && return
+    CLEANED=1
+    trap '' EXIT HUP INT TERM
+    if [ -f "$PIDFILE" ]; then
+        pid="$(cat "$PIDFILE")"
+        # Ask the app to exit cleanly (it flushes progress on SIGTERM), then
+        # stop only that PID if it does not.
+        kill -TERM "$pid" 2>/dev/null
+        n=0
+        while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 30 ]; do sleep 0.1; n=$((n+1)); done
+        kill -KILL "$pid" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    restore_display || echo 'WARNING: restore_display failed — use the recovery runbook' >&2
+    rmdir "$LOCK" 2>/dev/null
+}
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM HUP
+
+handoff_display || exit 1
+"$APP" >>"$LOG" 2>&1 &
+echo $! >"$PIDFILE"
+wait $!
+status=$?
+echo "app exited with status $status" >>"$LOG"
+exit "$status"

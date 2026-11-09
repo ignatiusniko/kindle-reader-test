@@ -1,0 +1,165 @@
+import { Theme, BigButton } from "theme.slint";
+import { ReadingOptions } from "ReadingOptions.slint";
+
+// Full-screen page. No toolbar while reading; three invisible tap zones
+// (handled in Rust from the tap x position so direction logic lives in one
+// place), contextual options on centre tap.
+export component Reader inherits Rectangle {
+    in property <image> page-image;
+    in property <bool> fit-width;
+    in property <length> page-display-height;
+    in property <length> page-offset;
+    in property <int> page-number;
+    in property <int> page-count;
+    in property <bool> show-progress;
+    in property <bool> progress-visible;
+    in property <bool> loading-visible;
+    in property <string> notice;
+    in property <bool> has-image;
+    in property <string> title;
+
+    in property <bool> error-visible;
+    in property <string> error-message;
+    in property <bool> error-can-skip;
+    in property <bool> error-can-retry;
+
+    in-out property <bool> options-open;
+    in-out property <bool> advanced-open;
+    in property <bool> rtl;
+    in property <bool> darker;
+    in property <string> diagnostics;
+
+    callback page-tap(length);
+    callback set-fit-width(bool);
+    callback set-rtl(bool);
+    callback prev-page();
+    callback next-page();
+    callback jump(float);
+    callback set-darker(bool);
+    callback set-show-progress(bool);
+    callback refresh-screen();
+    callback to-library();
+    callback retry();
+    callback skip();
+
+    background: Theme.paper;
+    clip: true;
+
+    if root.fit-width: Image {
+        x: 0;
+        y: -root.page-offset;
+        width: root.width;
+        height: root.page-display-height;
+        source: root.page-image;
+        image-fit: fill;
+    }
+    if !root.fit-width: Image {
+        width: root.width;
+        height: root.height;
+        source: root.page-image;
+        image-fit: contain;
+    }
+
+    if !root.has-image && !root.error-visible: Text {
+        text: root.title + "\n\nOpening…";
+        font-size: Theme.font-body;
+        color: Theme.ink;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        clicked => {
+            if root.options-open {
+                root.options-open = false;
+            } else if !root.error-visible {
+                root.page-tap(self.pressed-x);
+            }
+        }
+    }
+
+    if root.loading-visible: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: Theme.gap;
+        width: 30 * Theme.mm;
+        height: 0.8 * Theme.tap;
+        background: Theme.paper;
+        border-width: Theme.border;
+        border-color: Theme.ink;
+        Text { text: "Loading…"; font-size: Theme.font-small; color: Theme.ink; }
+    }
+
+    if root.show-progress && root.progress-visible && !root.options-open: Rectangle {
+        x: parent.width - self.width - Theme.gap;
+        y: parent.height - self.height - Theme.gap;
+        width: 24 * Theme.mm;
+        height: 0.6 * Theme.tap;
+        background: Theme.paper;
+        Text {
+            text: root.page-number + " / " + root.page-count;
+            font-size: Theme.font-small;
+            color: Theme.ink;
+        }
+    }
+
+    if root.notice != "": Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 2 * Theme.tap;
+        width: 50 * Theme.mm;
+        height: 0.8 * Theme.tap;
+        background: Theme.ink;
+        Text { text: root.notice; font-size: Theme.font-body; color: Theme.paper; }
+    }
+
+    if root.error-visible: Rectangle {
+        x: Theme.pad;
+        y: (parent.height - self.height) / 2;
+        width: parent.width - 2 * Theme.pad;
+        height: err-layout.preferred-height;
+        background: Theme.paper;
+        border-width: Theme.border;
+        border-color: Theme.ink;
+        TouchArea { }
+        err-layout := VerticalLayout {
+            padding: Theme.pad;
+            spacing: Theme.gap;
+            Text {
+                text: root.error-message;
+                font-size: Theme.font-body;
+                color: Theme.ink;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: Theme.gap;
+                if root.error-can-skip: BigButton { horizontal-stretch: 1; text: "Skip page"; clicked => { root.skip(); } }
+                if root.error-can-retry: BigButton { horizontal-stretch: 1; text: "Try lower quality"; clicked => { root.retry(); } }
+                BigButton { horizontal-stretch: 1; text: "Back"; clicked => { root.to-library(); } }
+            }
+        }
+    }
+
+    if root.options-open: ReadingOptions {
+        x: 0;
+        width: parent.width;
+        height: self.preferred-height;
+        y: parent.height - self.height;
+        fit-width: root.fit-width;
+        rtl: root.rtl;
+        page-number: root.page-number;
+        page-count: root.page-count;
+        darker: root.darker;
+        show-progress: root.show-progress;
+        diagnostics: root.diagnostics;
+        advanced-open <=> root.advanced-open;
+        set-fit-width(v) => { root.set-fit-width(v); }
+        set-rtl(v) => { root.set-rtl(v); }
+        prev-page => { root.prev-page(); }
+        next-page => { root.next-page(); }
+        jump(f) => { root.jump(f); }
+        set-darker(v) => { root.set-darker(v); }
+        set-show-progress(v) => { root.set-show-progress(v); }
+        refresh-screen => { root.refresh-screen(); }
+        to-library => { root.to-library(); }
+        close => { root.options-open = false; }
+    }
+}

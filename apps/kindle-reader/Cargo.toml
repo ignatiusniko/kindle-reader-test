@@ -1,0 +1,39 @@
+[package]
+name = "eink-reader"
+description = "Minimal CBZ manga reader for E-Ink Kindles (Slint UI)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "eink-reader"
+path = "src/main.rs"
+
+[features]
+default = []
+# Real device: slint-backend-kindle (framebuffer + touch). Needs
+# assets/fonts/ReaderFont.ttf at build time.
+kindle = ["dep:slint-backend-kindle"]
+# Desktop preview window on the development laptop (winit).
+desktop = ["slint/backend-winit", "slint/renderer-software"]
+
+[dependencies]
+reader-core.workspace = true
+persistence.workspace = true
+memory-budget.workspace = true
+image-pipeline.workspace = true
+diagnostic-kit.workspace = true
+libc.workspace = true
+png.workspace = true
+slint.workspace = true
+slint-backend-kindle = { workspace = true, optional = true }
+
+[build-dependencies]
+slint-build = "1.18"
+
+[dev-dependencies]
+test-fixtures.workspace = true
+
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc.workspace = true

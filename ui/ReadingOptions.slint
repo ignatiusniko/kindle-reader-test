@@ -1,0 +1,105 @@
+import { Theme, BigButton } from "theme.slint";
+
+// Contextual panel over the page (spec §3 "Reading Options"). Only the
+// essentials are visible; "More" discloses Advanced.
+export component ReadingOptions inherits Rectangle {
+    in property <bool> fit-width;
+    in property <bool> rtl;
+    in property <int> page-number;   // 1-based
+    in property <int> page-count;
+    in property <bool> darker;
+    in property <bool> show-progress;
+    in property <string> diagnostics;
+    in-out property <bool> advanced-open;
+    callback set-fit-width(bool);
+    callback set-rtl(bool);
+    callback prev-page();
+    callback next-page();
+    callback jump(float);
+    callback set-darker(bool);
+    callback set-show-progress(bool);
+    callback refresh-screen();
+    callback to-library();
+    callback close();
+
+    background: Theme.paper;
+    border-width: Theme.border;
+    border-color: Theme.ink;
+
+    // Swallow taps on the panel background so they do not reach the page.
+    TouchArea { }
+
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: Theme.gap;
+
+        HorizontalLayout {
+            spacing: Theme.gap;
+            Text { text: "Fit"; font-size: Theme.font-body; color: Theme.ink; vertical-alignment: center; min-width: 18 * Theme.mm; }
+            BigButton { horizontal-stretch: 1; text: "Page"; selected: !root.fit-width; clicked => { root.set-fit-width(false); } }
+            BigButton { horizontal-stretch: 1; text: "Width"; selected: root.fit-width; clicked => { root.set-fit-width(true); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.gap;
+            Text { text: "Direction"; font-size: Theme.font-body; color: Theme.ink; vertical-alignment: center; min-width: 18 * Theme.mm; }
+            BigButton { horizontal-stretch: 1; text: "Left → Right"; selected: !root.rtl; clicked => { root.set-rtl(false); } }
+            BigButton { horizontal-stretch: 1; text: "Right → Left"; selected: root.rtl; clicked => { root.set-rtl(true); } }
+        }
+        HorizontalLayout {
+            spacing: Theme.gap;
+            BigButton { text: "‹ Previous"; clicked => { root.prev-page(); } }
+            Text {
+                horizontal-stretch: 1;
+                text: root.page-number + " / " + root.page-count;
+                font-size: Theme.font-title;
+                color: Theme.ink;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            BigButton { text: "Next ›"; clicked => { root.next-page(); } }
+        }
+        HorizontalLayout {
+            spacing: 0.5 * Theme.gap;
+            BigButton { horizontal-stretch: 1; text: "Start"; clicked => { root.jump(0.0); } }
+            BigButton { horizontal-stretch: 1; text: "25%"; clicked => { root.jump(0.25); } }
+            BigButton { horizontal-stretch: 1; text: "50%"; clicked => { root.jump(0.5); } }
+            BigButton { horizontal-stretch: 1; text: "75%"; clicked => { root.jump(0.75); } }
+            BigButton { horizontal-stretch: 1; text: "End"; clicked => { root.jump(1.0); } }
+        }
+
+        if root.advanced-open: VerticalLayout {
+            spacing: Theme.gap;
+            Rectangle { height: Theme.border; background: Theme.ink; }
+            HorizontalLayout {
+                spacing: Theme.gap;
+                Text { text: "Contrast"; font-size: Theme.font-body; color: Theme.ink; vertical-alignment: center; min-width: 18 * Theme.mm; }
+                BigButton { horizontal-stretch: 1; text: "Normal"; selected: !root.darker; clicked => { root.set-darker(false); } }
+                BigButton { horizontal-stretch: 1; text: "Darker"; selected: root.darker; clicked => { root.set-darker(true); } }
+            }
+            HorizontalLayout {
+                spacing: Theme.gap;
+                Text { text: "Page no."; font-size: Theme.font-body; color: Theme.ink; vertical-alignment: center; min-width: 18 * Theme.mm; }
+                BigButton { horizontal-stretch: 1; text: "Show"; selected: root.show-progress; clicked => { root.set-show-progress(true); } }
+                BigButton { horizontal-stretch: 1; text: "Hide"; selected: !root.show-progress; clicked => { root.set-show-progress(false); } }
+            }
+            BigButton { text: "Refresh screen"; clicked => { root.refresh-screen(); } }
+            Text {
+                text: root.diagnostics;
+                font-size: Theme.font-small;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: Theme.gap;
+            BigButton {
+                text: root.advanced-open ? "Less" : "More";
+                clicked => { root.advanced-open = !root.advanced-open; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            BigButton { text: "Library"; clicked => { root.to-library(); } }
+            BigButton { text: "Close"; clicked => { root.close(); } }
+        }
+    }
+}

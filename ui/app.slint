@@ -1,0 +1,137 @@
+import { Theme } from "theme.slint";
+import { Library, BookItem } from "Library.slint";
+import { Reader } from "Reader.slint";
+
+export { Theme, BookItem }
+
+// Three user-facing views only: Library → Reader → Reading Options.
+export component AppWindow inherits Window {
+    title: "E-Ink Reader";
+    background: Theme.paper;
+    preferred-width: 1072px;
+    preferred-height: 1448px;
+
+    in property <int> screen: 0; // 0 = library, 1 = reader
+    // Full-screen black flash used by "Refresh screen" to clear ghosting.
+    in property <bool> flash: false;
+
+    // Library
+    in property <bool> has-continue;
+    in property <BookItem> continue-book;
+    in property <[BookItem]> books;
+    in property <int> list-page;
+    in property <int> list-pages;
+    in property <string> library-status;
+    callback open-book(string);
+    callback list-prev();
+    callback list-next();
+    callback rescan();
+    callback exit-app();
+
+    // Reader
+    in property <image> page-image;
+    in property <bool> has-image;
+    in property <bool> fit-width;
+    in property <length> page-display-height;
+    in property <length> page-offset;
+    in property <int> page-number;
+    in property <int> page-count;
+    in property <bool> show-progress: true;
+    in property <bool> progress-visible;
+    in property <bool> loading-visible;
+    in property <string> notice;
+    in property <string> book-title;
+    in property <bool> error-visible;
+    in property <string> error-message;
+    in property <bool> error-can-skip;
+    in property <bool> error-can-retry;
+    in-out property <bool> options-open;
+    in-out property <bool> advanced-open;
+    in property <bool> rtl: true;
+    in property <bool> darker;
+    in property <string> diagnostics;
+    callback page-tap(length);
+    callback set-fit-width(bool);
+    callback set-rtl(bool);
+    callback prev-page();
+    callback next-page();
+    callback jump(float);
+    callback set-darker(bool);
+    callback set-show-progress(bool);
+    callback refresh-screen();
+    callback to-library();
+    callback retry();
+    callback skip();
+
+    if root.screen == 0: Library {
+        width: root.width;
+        height: root.height;
+        has-continue: root.has-continue;
+        continue-book: root.continue-book;
+        books: root.books;
+        list-page: root.list-page;
+        list-pages: root.list-pages;
+        status: root.library-status;
+        open-book(id) => { root.open-book(id); }
+        list-prev => { root.list-prev(); }
+        list-next => { root.list-next(); }
+        rescan => { root.rescan(); }
+        exit-app => { root.exit-app(); }
+    }
+
+    if root.screen == 1: Reader {
+        width: root.width;
+        height: root.height;
+        page-image: root.page-image;
+        has-image: root.has-image;
+        fit-width: root.fit-width;
+        page-display-height: root.page-display-height;
+        page-offset: root.page-offset;
+        page-number: root.page-number;
+        page-count: root.page-count;
+        show-progress: root.show-progress;
+        progress-visible: root.progress-visible;
+        loading-visible: root.loading-visible;
+        notice: root.notice;
+        title: root.book-title;
+        error-visible: root.error-visible;
+        error-message: root.error-message;
+        error-can-skip: root.error-can-skip;
+        error-can-retry: root.error-can-retry;
+        options-open <=> root.options-open;
+        advanced-open <=> root.advanced-open;
+        rtl: root.rtl;
+        darker: root.darker;
+        diagnostics: root.diagnostics;
+        page-tap(x) => { root.page-tap(x); }
+        set-fit-width(v) => { root.set-fit-width(v); }
+        set-rtl(v) => { root.set-rtl(v); }
+        prev-page => { root.prev-page(); }
+        next-page => { root.next-page(); }
+        jump(f) => { root.jump(f); }
+        set-darker(v) => { root.set-darker(v); }
+        set-show-progress(v) => { root.set-show-progress(v); }
+        refresh-screen => { root.refresh-screen(); }
+        to-library => { root.to-library(); }
+        retry => { root.retry(); }
+        skip => { root.skip(); }
+    }
+
+    forward-focus: keys;
+
+    // Physical/desktop keys. PageDown/PageUp are always next/previous;
+    // arrow keys behave like tapping that side of the screen.
+    keys := FocusScope {
+        key-pressed(event) => {
+            if root.screen != 1 { return reject; }
+            if event.text == Key.PageDown || event.text == " " { root.next-page(); return accept; }
+            if event.text == Key.PageUp { root.prev-page(); return accept; }
+            if event.text == Key.RightArrow { root.page-tap(root.width - 1px); return accept; }
+            if event.text == Key.LeftArrow { root.page-tap(0px); return accept; }
+            if event.text == Key.Escape { root.to-library(); return accept; }
+            reject
+        }
+    }
+
+    if root.flash: Rectangle { background: black; }
+}

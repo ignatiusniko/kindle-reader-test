@@ -1,0 +1,10 @@
+/target
+**/*.rs.bk
+# Never commit books, device dumps or fonts of unknown licence.
+/tests/fixtures/*.cbz
+/assets/fonts/*.ttf
+/assets/fonts/*.otf
+/dist
+*.log
+.env
+assets/fonts/LICENSE-*

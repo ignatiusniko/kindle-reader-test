@@ -1,0 +1,153 @@
+import { Theme, BigButton } from "theme.slint";
+
+export struct BookItem {
+    id: string,
+    title: string,
+    progress: string,
+    missing: bool,
+}
+
+component BookRow inherits Rectangle {
+    in property <BookItem> book;
+    callback open(string);
+    height: 1.25 * Theme.tap;
+    background: touch.pressed ? Theme.ink : Theme.paper;
+
+    VerticalLayout {
+        padding-left: Theme.gap;
+        padding-right: Theme.gap;
+        alignment: center;
+        Text {
+            text: root.book.title;
+            font-size: Theme.font-body;
+            color: touch.pressed ? Theme.paper : Theme.ink;
+            overflow: elide;
+        }
+        Text {
+            text: root.book.progress;
+            font-size: Theme.font-small;
+            color: touch.pressed ? Theme.paper : Theme.muted;
+            overflow: elide;
+        }
+    }
+    Rectangle {
+        y: parent.height - Theme.border;
+        height: Theme.border;
+        background: Theme.ink;
+    }
+    touch := TouchArea {
+        clicked => { root.open(root.book.id); }
+    }
+}
+
+export component Library inherits Rectangle {
+    in property <bool> has-continue;
+    in property <BookItem> continue-book;
+    in property <[BookItem]> books;     // current list page only
+    in property <int> list-page;        // 0-based
+    in property <int> list-pages;
+    in property <string> status;        // "Scanning…", "No books found in …"
+    callback open-book(string);
+    callback list-prev();
+    callback list-next();
+    callback rescan();
+    callback exit-app();
+
+    background: Theme.paper;
+
+    VerticalLayout {
+        padding: Theme.pad;
+        spacing: Theme.gap;
+
+        HorizontalLayout {
+            spacing: Theme.gap;
+            Text {
+                text: "Library";
+                font-size: Theme.font-title;
+                font-weight: 700;
+                color: Theme.ink;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            BigButton { text: "Exit"; clicked => { root.exit-app(); } }
+        }
+
+        if root.has-continue: Rectangle {
+            border-width: Theme.border;
+            border-color: Theme.ink;
+            background: card-touch.pressed ? Theme.ink : Theme.paper;
+            height: 2.6 * Theme.tap;
+            VerticalLayout {
+                padding: Theme.gap;
+                spacing: 0.5 * Theme.gap;
+                alignment: center;
+                Text {
+                    text: "Continue reading";
+                    font-size: Theme.font-small;
+                    color: card-touch.pressed ? Theme.paper : Theme.muted;
+                }
+                Text {
+                    text: root.continue-book.title;
+                    font-size: Theme.font-title;
+                    font-weight: 700;
+                    color: card-touch.pressed ? Theme.paper : Theme.ink;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.continue-book.progress;
+                    font-size: Theme.font-body;
+                    color: card-touch.pressed ? Theme.paper : Theme.ink;
+                }
+            }
+            card-touch := TouchArea {
+                clicked => { root.open-book(root.continue-book.id); }
+            }
+        }
+
+        Text {
+            text: "Books";
+            font-size: Theme.font-body;
+            font-weight: 700;
+            color: Theme.ink;
+        }
+        Rectangle { height: Theme.border; background: Theme.ink; }
+
+        VerticalLayout {
+            vertical-stretch: 1;
+            alignment: start;
+            for book in root.books: BookRow {
+                book: book;
+                open(id) => { root.open-book(id); }
+            }
+            if root.books.length == 0: Text {
+                text: root.status;
+                font-size: Theme.font-body;
+                color: Theme.muted;
+                wrap: word-wrap;
+            }
+        }
+
+        HorizontalLayout {
+            spacing: Theme.gap;
+            BigButton {
+                text: "‹ Prev";
+                enabled: root.list-page > 0;
+                clicked => { root.list-prev(); }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: root.list-pages > 1 ? (root.list-page + 1) + " / " + root.list-pages : "";
+                font-size: Theme.font-body;
+                color: Theme.ink;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            BigButton {
+                text: "Next ›";
+                enabled: root.list-page + 1 < root.list-pages;
+                clicked => { root.list-next(); }
+            }
+            BigButton { text: "Rescan"; clicked => { root.rescan(); } }
+        }
+    }
+}

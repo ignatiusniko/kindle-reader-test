@@ -1,0 +1,46 @@
+// E-Ink theme: black on white, no shadows, no animation.
+// Sizes are derived from physical millimetres (Theme.mm is set from the
+// device DPI at startup), not hard-coded pixels (spec §3 "E-Ink ergonomics").
+
+export global Theme {
+    // Pixels per millimetre. 300 ppi ≈ 11.81 px/mm (Kindle Basic 2022).
+    in-out property <length> mm: 11.81px;
+    out property <length> tap: 11 * mm;          // 10–12 mm target
+    out property <length> gap: 2.5 * mm;
+    out property <length> pad: 4 * mm;
+    out property <length> border: max(2px, 0.25 * mm);
+    out property <length> font-small: 2.4 * mm;
+    out property <length> font-body: 3.0 * mm;
+    out property <length> font-title: 4.4 * mm;
+    out property <color> ink: #000000;
+    out property <color> paper: #ffffff;
+    out property <color> muted: #555555;
+}
+
+// Large, flat button. Pressed / selected state inverts colours.
+export component BigButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    min-height: Theme.tap;
+    min-width: Theme.tap;
+    preferred-width: max(Theme.tap, label.preferred-width + 2 * Theme.gap);
+    border-width: Theme.border;
+    border-color: root.enabled ? Theme.ink : Theme.muted;
+    background: (touch.pressed || root.selected) && root.enabled ? Theme.ink : Theme.paper;
+
+    label := Text {
+        text: root.text;
+        font-size: Theme.font-body;
+        color: (touch.pressed || root.selected) && root.enabled ? Theme.paper : (root.enabled ? Theme.ink : Theme.muted);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
