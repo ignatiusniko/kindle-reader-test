@@ -347,17 +347,17 @@ fn decode_jpeg(
         match info.pixel_format {
             PixelFormat::L8 => row.copy_from_slice(src),
             PixelFormat::L16 => {
-                for (o, px) in row.iter_mut().zip(src.chunks_exact(2)) {
+                for (o, px) in row.iter_mut().zip(src.as_chunks::<2>().0) {
                     *o = px[0];
                 }
             }
             PixelFormat::RGB24 => {
-                for (o, px) in row.iter_mut().zip(src.chunks_exact(3)) {
+                for (o, px) in row.iter_mut().zip(src.as_chunks::<3>().0) {
                     *o = luma(px[0], px[1], px[2]);
                 }
             }
             PixelFormat::CMYK32 => {
-                for (o, px) in row.iter_mut().zip(src.chunks_exact(4)) {
+                for (o, px) in row.iter_mut().zip(src.as_chunks::<4>().0) {
                     // jpeg-decoder returns inverted (Adobe) CMYK; approximate.
                     let k = px[3] as u32;
                     let c = |v: u8| ((v as u32 * k) / 255) as u8;
@@ -416,17 +416,17 @@ fn decode_png(
     let to_gray = |src: &[u8], dst: &mut [u8]| match channels {
         1 => dst.copy_from_slice(&src[..dst.len()]),
         2 => {
-            for (o, p) in dst.iter_mut().zip(src.chunks_exact(2)) {
+            for (o, p) in dst.iter_mut().zip(src.as_chunks::<2>().0) {
                 *o = over_white(p[0], p[1]);
             }
         }
         3 => {
-            for (o, p) in dst.iter_mut().zip(src.chunks_exact(3)) {
+            for (o, p) in dst.iter_mut().zip(src.as_chunks::<3>().0) {
                 *o = luma(p[0], p[1], p[2]);
             }
         }
         _ => {
-            for (o, p) in dst.iter_mut().zip(src.chunks_exact(4)) {
+            for (o, p) in dst.iter_mut().zip(src.as_chunks::<4>().0) {
                 *o = over_white(luma(p[0], p[1], p[2]), p[3]);
             }
         }
