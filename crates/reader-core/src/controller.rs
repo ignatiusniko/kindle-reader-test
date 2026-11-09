@@ -107,7 +107,10 @@ struct Session {
 
 pub struct Controller {
     store: Store,
+    /// Logical (UI) pixels: tap positions, display heights, offsets.
     viewport: Viewport,
+    /// Physical pixels per logical pixel; decode size = viewport × scale.
+    render_scale: f32,
     generation: u64,
     state: ReaderState,
     session: Option<Session>,
@@ -130,6 +133,7 @@ impl Controller {
         Self {
             store,
             viewport,
+            render_scale: 1.0,
             generation: 0,
             state: ReaderState::Idle,
             session: None,
@@ -155,6 +159,13 @@ impl Controller {
     pub fn set_viewport(&mut self, v: Viewport) {
         if v.width > 0 && v.height > 0 {
             self.viewport = v;
+        }
+    }
+    /// Window scale factor (1.0 on the Kindle). Pages are decoded at
+    /// `viewport × scale` physical pixels for a sharp image.
+    pub fn set_render_scale(&mut self, scale: f32) {
+        if scale.is_finite() && scale > 0.0 {
+            self.render_scale = scale;
         }
     }
     pub fn prefs(&self) -> Option<ReadingPrefs> {
@@ -270,6 +281,7 @@ impl Controller {
     fn request_page(&mut self, quality: Quality) -> Vec<Output> {
         let generation = self.next_generation();
         let vp = self.viewport;
+        let scale = self.render_scale;
         let Some(s) = self.session.as_ref() else {
             return vec![];
         };
@@ -277,8 +289,8 @@ impl Controller {
             book_path: s.path.clone(),
             page_index: s.nav.page(),
             render: RenderRequest {
-                viewport_width: vp.width,
-                viewport_height: vp.height,
+                viewport_width: (vp.width as f32 * scale).round().max(1.0) as u32,
+                viewport_height: (vp.height as f32 * scale).round().max(1.0) as u32,
                 fit: crate::fit_mode(s.prefs.fit),
                 quality,
                 contrast: crate::contrast(s.prefs.contrast),
@@ -358,10 +370,12 @@ impl Controller {
         }
         match result {
             PageResult::Ready(p) => {
+                // Display sizes are logical pixels; the image may be larger
+                // (scale factor) or smaller (no upscaling) than the screen.
                 let (w, h) = (p.image.width.max(1) as f32, p.image.height as f32);
                 let display_height = match s.prefs.fit {
                     Fit::Width => h * vp.width as f32 / w,
-                    Fit::Page => h.min(vp.height as f32),
+                    Fit::Page => vp.height as f32,
                 };
                 s.offsets = match s.prefs.fit {
                     Fit::Width => segment_offsets(display_height, vp.height as f32),
@@ -484,6 +498,20 @@ impl Controller {
             return vec![Output::Notice("Last page".into())];
         }
         self.jump_to(page + 1)
+    }
+
+    /// The UI could not afford to display a delivered page (its display copy
+    /// did not fit the budget). Retry once at lower quality, then give up
+    /// with the memory error instead of allocating unaccounted memory.
+    pub fn present_refused(&mut self, already_reduced: bool) -> Vec<Output> {
+        if !self.reading() {
+            return vec![];
+        }
+        if already_reduced {
+            self.error(MSG_TOO_LARGE, true, false)
+        } else {
+            self.request_page(Quality::LowMemory)
+        }
     }
 
     /// Re-request the current page (or reopen the book) at lower quality.

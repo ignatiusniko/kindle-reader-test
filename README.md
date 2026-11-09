@@ -50,6 +50,9 @@ docs/                 Architecture, device matrix, safety runbook, tests, decisi
 
 ## Host quick start
 
+Host builds of the Slint UI need the fontconfig headers (Debian/Ubuntu:
+`libfontconfig-dev`; macOS needs nothing extra).
+
 ```bash
 scripts/check.sh                 # fmt + clippy + all tests (same as CI)
 ```

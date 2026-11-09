@@ -3397,6 +3397,7 @@ dependencies = [
  "cbz-reader",
  "diagnostic-kit",
  "image-pipeline",
+ "libc",
  "memory-budget",
  "mimalloc",
  "persistence",

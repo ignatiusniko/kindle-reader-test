@@ -13,8 +13,10 @@
 //! respawning after repeated consecutive failures (no restart loop).
 
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::time::{Duration, Instant};
 
 use image_pipeline::{GrayImage, Quality, RenderRequest};
 use memory_budget::{Limits, MemoryBudget, required_bytes};
@@ -27,6 +29,11 @@ use crate::render::{
 };
 
 const MAX_HEADER_BYTES: u64 = 64 * 1024;
+/// How often a wait for worker output re-checks cancellation. Only active
+/// while a page is being decoded, never while the reader is idle.
+const POLL_SLICE: Duration = Duration::from_millis(50);
+pub const DEFAULT_RENDER_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_OPEN_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -218,6 +225,108 @@ pub fn serve<R: BufRead, W: Write>(
     }
 }
 
+/// Wait until `r` has data (or EOF/error) to read, without blocking past
+/// `deadline` and while `cancelled()` is false.
+fn wait_readable(
+    r: &BufReader<ChildStdout>,
+    cancelled: &dyn Fn() -> bool,
+    deadline: Instant,
+) -> io::Result<()> {
+    if !r.buffer().is_empty() {
+        return Ok(());
+    }
+    let fd = r.get_ref().as_raw_fd();
+    loop {
+        if cancelled() {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "worker did not answer in time",
+            ));
+        }
+        let slice = (deadline - now).min(POLL_SLICE).as_millis().max(1) as libc::c_int;
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd on the stack for the duration of the call.
+        let rc = unsafe { libc::poll(&mut pfd, 1, slice) };
+        if rc > 0 {
+            // Readable, or hang-up/error: the following read reports which.
+            return Ok(());
+        }
+        if rc < 0 {
+            let e = io::Error::last_os_error();
+            if e.kind() != io::ErrorKind::Interrupted {
+                return Err(e);
+            }
+        }
+    }
+}
+
+/// Read one `\n`-terminated header line, bounded in size and time.
+fn read_line_bounded(
+    r: &mut BufReader<ChildStdout>,
+    cancelled: &dyn Fn() -> bool,
+    deadline: Instant,
+) -> io::Result<String> {
+    let mut out = Vec::new();
+    loop {
+        wait_readable(r, cancelled, deadline)?;
+        let buf = r.fill_buf()?;
+        if buf.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "worker exited",
+            ));
+        }
+        if let Some(i) = buf.iter().position(|b| *b == b'\n') {
+            out.extend_from_slice(&buf[..i]);
+            r.consume(i + 1);
+            break;
+        }
+        let n = buf.len();
+        out.extend_from_slice(buf);
+        r.consume(n);
+        if out.len() as u64 > MAX_HEADER_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "header too long",
+            ));
+        }
+    }
+    String::from_utf8(out).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
+/// Fill `dst` from `r`, bounded in time and cancellable.
+fn read_exact_bounded(
+    r: &mut BufReader<ChildStdout>,
+    dst: &mut [u8],
+    cancelled: &dyn Fn() -> bool,
+    deadline: Instant,
+) -> io::Result<()> {
+    let mut filled = 0;
+    while filled < dst.len() {
+        wait_readable(r, cancelled, deadline)?;
+        let buf = r.fill_buf()?;
+        if buf.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "worker exited",
+            ));
+        }
+        let n = buf.len().min(dst.len() - filled);
+        dst[filled..filled + n].copy_from_slice(&buf[..n]);
+        r.consume(n);
+        filled += n;
+    }
+    Ok(())
+}
+
 struct WorkerChild {
     child: Child,
     stdin: ChildStdin,
@@ -241,6 +350,8 @@ pub struct ProcessRenderer {
     limits: Limits,
     /// UI-side budget for received page buffers.
     budget: MemoryBudget,
+    render_timeout: Duration,
+    open_timeout: Duration,
 }
 
 impl ProcessRenderer {
@@ -253,7 +364,16 @@ impl ProcessRenderer {
             max_consecutive_failures: 3,
             limits,
             budget,
+            render_timeout: DEFAULT_RENDER_TIMEOUT,
+            open_timeout: DEFAULT_OPEN_TIMEOUT,
         }
+    }
+
+    /// Override how long to wait for the worker before killing it.
+    pub fn with_timeouts(mut self, render: Duration, open: Duration) -> Self {
+        self.render_timeout = render;
+        self.open_timeout = open;
+        self
     }
 
     /// PID of the running worker, if any (diagnostics / kill tests).
@@ -280,21 +400,19 @@ impl ProcessRenderer {
         Ok(self.child.as_mut().expect("just spawned"))
     }
 
-    fn call(&mut self, req: &WorkerRequest) -> io::Result<WorkerResponse> {
+    /// Send one request and wait for its header line. Never blocks past
+    /// `deadline`, and returns `Interrupted` as soon as `cancelled()`.
+    fn call(
+        &mut self,
+        req: &WorkerRequest,
+        cancelled: &dyn Fn() -> bool,
+        deadline: Instant,
+    ) -> io::Result<WorkerResponse> {
         let c = self.ensure_child()?;
         serde_json::to_writer(&mut c.stdin, req).map_err(io::Error::other)?;
         c.stdin.write_all(b"\n")?;
         c.stdin.flush()?;
-        let mut line = String::new();
-        let n = (&mut c.stdout)
-            .take(MAX_HEADER_BYTES)
-            .read_line(&mut line)?;
-        if n == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "worker exited",
-            ));
-        }
+        let line = read_line_bounded(&mut c.stdout, cancelled, deadline)?;
         serde_json::from_str(line.trim_end())
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
@@ -305,18 +423,36 @@ impl ProcessRenderer {
         format!("render worker failed: {e}")
     }
 
-    fn read_pixels(&mut self, w: u32, h: u32) -> io::Result<Vec<u8>> {
+    /// Map an IPC error during a render: cancellation kills the worker (its
+    /// reply would desynchronise the pipe) but is not a failure.
+    fn render_io_error(&mut self, e: io::Error) -> PageResult {
+        if e.kind() == io::ErrorKind::Interrupted {
+            self.child = None;
+            PageResult::Cancelled
+        } else {
+            PageResult::InternalWorkerFailure(self.fail(e))
+        }
+    }
+
+    fn read_pixels(
+        &mut self,
+        w: u32,
+        h: u32,
+        cancelled: &dyn Fn() -> bool,
+        deadline: Instant,
+    ) -> io::Result<Vec<u8>> {
         let n = required_bytes(w, h, 1)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "size overflow"))?;
         let c = self.child.as_mut().expect("child alive after call");
         let mut buf = vec![0u8; n];
-        c.stdout.read_exact(&mut buf)?;
+        read_exact_bounded(&mut c.stdout, &mut buf, cancelled, deadline)?;
         Ok(buf)
     }
 
     /// Ask the worker for its PID (spawning it if necessary).
     pub fn ping(&mut self) -> io::Result<u32> {
-        match self.call(&WorkerRequest::Ping)? {
+        let deadline = Instant::now() + self.open_timeout;
+        match self.call(&WorkerRequest::Ping, &|| false, deadline)? {
             WorkerResponse::Pong { pid } => Ok(pid),
             other => Err(io::Error::other(format!("unexpected {other:?}"))),
         }
@@ -326,9 +462,14 @@ impl ProcessRenderer {
 impl PageRenderer for ProcessRenderer {
     fn open(&mut self, path: &Path) -> Result<BookInfo, BookError> {
         self.consecutive_failures = 0;
-        match self.call(&WorkerRequest::Open {
-            path: path.to_owned(),
-        }) {
+        let deadline = Instant::now() + self.open_timeout;
+        match self.call(
+            &WorkerRequest::Open {
+                path: path.to_owned(),
+            },
+            &|| false,
+            deadline,
+        ) {
             Ok(WorkerResponse::Opened {
                 page_count,
                 skipped_entries,
@@ -379,7 +520,8 @@ impl PageRenderer for ProcessRenderer {
             },
             low_memory: req.render.quality == Quality::LowMemory,
         };
-        match self.call(&wire) {
+        let deadline = Instant::now() + self.render_timeout;
+        match self.call(&wire, cancelled, deadline) {
             Ok(WorkerResponse::Ready {
                 width,
                 height,
@@ -398,7 +540,7 @@ impl PageRenderer for ProcessRenderer {
                         return PageResult::TooLargeForBudget(e.to_string());
                     }
                 };
-                match self.read_pixels(width, height) {
+                match self.read_pixels(width, height, cancelled, deadline) {
                     Ok(px) => {
                         self.consecutive_failures = 0;
                         let image = GrayImage::from_pixels(width, height, px)
@@ -412,7 +554,7 @@ impl PageRenderer for ProcessRenderer {
                             reduced_quality: false,
                         })
                     }
-                    Err(e) => PageResult::InternalWorkerFailure(self.fail(e)),
+                    Err(e) => self.render_io_error(e),
                 }
             }
             Ok(WorkerResponse::Error { kind, message }) => {
@@ -429,7 +571,7 @@ impl PageRenderer for ProcessRenderer {
                 let e = io::Error::other(format!("unexpected worker reply {other:?}"));
                 PageResult::InternalWorkerFailure(self.fail(e))
             }
-            Err(e) => PageResult::InternalWorkerFailure(self.fail(e)),
+            Err(e) => self.render_io_error(e),
         }
     }
 

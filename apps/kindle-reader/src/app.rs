@@ -448,15 +448,19 @@ impl AppState {
         app.set_library_status(status.into());
     }
 
+    /// Keep the controller in logical pixels (what taps and layout use) and
+    /// decode at physical resolution via the scale factor.
     fn update_viewport(&mut self, app: &AppWindow) {
+        let scale = app.window().scale_factor();
+        self.ctl.set_render_scale(scale);
         if self.cfg.viewport.is_some() {
             return;
         }
-        let s = app.window().size();
-        if s.width > 0 && s.height > 0 {
+        let logical = app.window().size().to_logical(scale);
+        if logical.width >= 1.0 && logical.height >= 1.0 {
             self.ctl.set_viewport(Viewport {
-                width: s.width,
-                height: s.height,
+                width: logical.width.round() as u32,
+                height: logical.height.round() as u32,
             });
         }
     }
@@ -543,6 +547,7 @@ impl AppState {
 
     pub fn apply(&mut self, outputs: Vec<Output>) {
         let Some(app) = self.app() else { return };
+        let mut follow_up = Vec::new();
         for o in outputs {
             match o {
                 Output::Submit(job) => self.sink.submit(job),
@@ -583,14 +588,24 @@ impl AppState {
                     reduced_quality,
                     decode_ms,
                 } => {
-                    self.loading = false;
-                    self.loading_timer.stop();
-                    // Account for the RGB copy Slint keeps for display.
+                    // Account for the RGB copy Slint keeps for display
+                    // *before* allocating it. If it does not fit, never
+                    // allocate unaccounted memory: retry smaller or error.
                     self.displayed = None;
-                    self.displayed = self
+                    match self
                         .budget
                         .reserve(image.pixels.len() * 3, "displayed page")
-                        .ok();
+                    {
+                        Ok(r) => self.displayed = Some(r),
+                        Err(e) => {
+                            self.log.line(&format!("display copy refused: {e}"));
+                            drop(image);
+                            follow_up.extend(self.ctl.present_refused(reduced_quality));
+                            continue;
+                        }
+                    }
+                    self.loading = false;
+                    self.loading_timer.stop();
                     let img = gray_to_image(&image);
                     drop(image);
                     app.set_page_image(img);
@@ -666,6 +681,9 @@ impl AppState {
                     self.refresh_library();
                 }
             }
+        }
+        if !follow_up.is_empty() {
+            self.apply(follow_up);
         }
     }
 }

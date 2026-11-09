@@ -278,3 +278,62 @@ fn direction_is_per_book_and_changes_tap_meaning() {
     let _ = Path::new("");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn render_scale_decodes_physical_but_lays_out_logical() {
+    let (mut c, dir) = controller("scale");
+    c.set_viewport(Viewport {
+        width: 500,
+        height: 700,
+    });
+    c.set_render_scale(2.0);
+    let out = c.open("b1");
+    let g = submitted(&out).unwrap().generation();
+    let out = c.on_event(Event::Opened {
+        generation: g,
+        path: "/books/one.cbz".into(),
+        result: Ok(BookInfo {
+            page_count: 3,
+            skipped_entries: 0,
+        }),
+    });
+    let Job::Render(r) = submitted(&out).unwrap().clone() else {
+        panic!()
+    };
+    assert_eq!(
+        (r.render.viewport_width, r.render.viewport_height),
+        (1000, 1400)
+    );
+    let out = c.set_fit(Fit::Width);
+    let Job::Render(r) = submitted(&out).unwrap().clone() else {
+        panic!()
+    };
+    // 1000×2800 physical image → 500 logical wide → 1400 logical tall.
+    let out = c.on_event(ready(r.generation, r.page_index, 1000, 2800));
+    let Some(Output::Present { display_height, .. }) = out.first() else {
+        panic!()
+    };
+    assert_eq!(*display_height, 1400.0);
+    // Tap at the logical right edge (LTR) advances a segment, not options.
+    c.set_direction(Direction::LeftToRight);
+    let out = c.tap(495.0, Instant::now() + Duration::from_secs(10));
+    assert!(matches!(out[0], Output::Scroll { .. }), "{out:?}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn refused_display_retries_once_then_errors() {
+    let (mut c, dir) = controller("refused");
+    open_and_present(&mut c, 3);
+    let out = c.present_refused(false);
+    assert!(
+        matches!(submitted(&out), Some(Job::Render(r)) if r.render.quality == Quality::LowMemory)
+    );
+    let out = c.present_refused(true);
+    let Output::ShowError(e) = &out[0] else {
+        panic!("{out:?}")
+    };
+    assert_eq!(e.message, MSG_TOO_LARGE);
+    assert!(e.can_skip && !e.can_retry);
+    std::fs::remove_dir_all(dir).unwrap();
+}

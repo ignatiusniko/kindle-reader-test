@@ -153,3 +153,52 @@ fn corrupt_page_is_an_error_not_a_crash() {
         PageResult::Ready(_)
     ));
 }
+
+#[test]
+fn hung_worker_times_out_and_is_replaced() {
+    let book = fixture("hang", test_fixtures::jpeg_book(3, 600, 900));
+    let mut r = renderer(&["--debug-hang-on-page", "1"])
+        .with_timeouts(Duration::from_millis(500), Duration::from_secs(5));
+    let pid = r.ping().unwrap();
+    let t = std::time::Instant::now();
+    let res = r.render(&req(&book, 1), &|| false);
+    assert!(
+        matches!(res, PageResult::InternalWorkerFailure(_)),
+        "{res:?}"
+    );
+    assert!(t.elapsed() < Duration::from_secs(3), "{:?}", t.elapsed());
+    // The stuck worker was killed and a new one answers.
+    assert!(matches!(
+        r.render(&req(&book, 0), &|| false),
+        PageResult::Ready(_)
+    ));
+    assert_ne!(r.ping().unwrap(), pid);
+}
+
+#[test]
+fn cancelling_a_stuck_render_returns_promptly() {
+    let book = fixture("cancel", test_fixtures::jpeg_book(3, 600, 900));
+    let mut r = renderer(&["--debug-hang-on-page", "2"]);
+    let t = std::time::Instant::now();
+    let cancel_after = t + Duration::from_millis(200);
+    let res = r.render(&req(&book, 2), &|| std::time::Instant::now() > cancel_after);
+    assert!(matches!(res, PageResult::Cancelled), "{res:?}");
+    assert!(t.elapsed() < Duration::from_secs(2));
+    // Cancellation is not counted as a crash; the next page renders.
+    assert!(matches!(
+        r.render(&req(&book, 0), &|| false),
+        PageResult::Ready(_)
+    ));
+}
+
+#[test]
+fn scheduler_drop_does_not_hang_on_stuck_worker() {
+    let book = fixture("drop", test_fixtures::jpeg_book(3, 600, 900));
+    let r = renderer(&["--debug-hang-on-page", "0"]);
+    let s = Scheduler::new(Box::new(r), |_| {});
+    s.submit(Job::Render(req(&book, 0)));
+    std::thread::sleep(Duration::from_millis(300));
+    let t = std::time::Instant::now();
+    drop(s);
+    assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+}
