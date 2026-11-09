@@ -24,6 +24,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Launcher and KUAL entry (fake app, fake UI process)
+        run: sh scripts/test-launcher.sh
 
   musl-memory:
     name: MEM-01 on musl (allocator regression guard)

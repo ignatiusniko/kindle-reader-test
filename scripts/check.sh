@@ -5,3 +5,4 @@ cd "$(dirname "$0")/.."
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+sh scripts/test-launcher.sh

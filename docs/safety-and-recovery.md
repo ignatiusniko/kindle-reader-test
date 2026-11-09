@@ -22,7 +22,36 @@
 | G6 | CBZ workload, MEM-01/02, ERR-01 | fixtures + `scripts/sample-memory.sh` |
 | G7 | Worker kill, failed launch, idle battery, update/rollback | `render-worker`, `deploy-kindle.sh` rollback |
 
-## G3: building the launcher
+## KT5 launcher (verified on one device)
+
+`scripts/run-graphics-kt5.sh` (deployed as `run-graphics.sh`) is the
+template with the hand-off filled in for Kindle Basic 2022 on firmware
+5.18.5.0.1: it closes KOReader if running, disables Pillow via `lipc`, and
+`SIGSTOP`s `awesome`, `cvm`, `KPPMainApp`; restore is the exact inverse
+(`SIGCONT`, re-enable Pillow) and is idempotent. Also:
+
+- `MODE=rehearse` — hand-off, wait 5 s, restore, without any app.
+- A lock with the launcher PID inside; a stale lock after power loss or
+  SIGKILL is detected and removed.
+- `APP_ARGS` passes options to the app (e.g. `--log`).
+- Host test with a fake UI process: `sh scripts/test-launcher.sh`.
+
+**KOReader's SSH server stops when the launcher closes KOReader.** Use
+USBNetLite (port 22) as the recovery path during graphics tests.
+
+Manual restore over SSH if the screen stays frozen:
+
+```sh
+killall -CONT KPPMainApp cvm awesome; lipc-set-prop com.lab126.pillow disableEnablePillow enable
+```
+
+## KUAL
+
+`kual/eink-reader` (installed to `/mnt/us/extensions/eink-reader`) only
+starts the launcher above, detached and after a 2 s delay so KUAL can close.
+It refuses to start a second instance. Logs: `logs/kual.log`, `logs/ui.log`.
+
+## G3: building the launcher (other models / firmware)
 
 1. With the Amazon UI active, observe (read-only) which processes exist and
    which one owns the framebuffer/touch (spec §21.1). Record in the hardware

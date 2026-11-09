@@ -26,13 +26,18 @@ cargo zigbuild --release --target "$TARGET" \
 
 OUT="target/$TARGET/release"
 DIST="dist/eink-reader-dev"
-rm -rf "$DIST"
-mkdir -p "$DIST/logs"
+EXT="dist/extensions/eink-reader"
+rm -rf "$DIST" "$EXT"
+mkdir -p "$DIST/logs" "$EXT"
 for b in eink-reader-cli-probe eink-reader-m0 eink-reader render-worker; do
     cp "$OUT/$b" "$DIST/"
 done
 cp scripts/g1-cli-repeat.sh scripts/sample-memory.sh "$DIST/"
 cp scripts/run-graphics.sh.template "$DIST/"
+# Device-verified launcher (KT5, fw 5.18.5.0.1) and the KUAL menu entry.
+cp scripts/run-graphics-kt5.sh "$DIST/run-graphics.sh"
+cp -R kual/eink-reader/. "$EXT/"
+rm -f "$EXT/README.md"
 cp assets/fonts/LICENSE* "$DIST/" 2>/dev/null || true
 (
     cd "$DIST"
@@ -48,5 +53,7 @@ echo "$TARGET" > "$DIST/TARGET"
 echo
 file "$DIST"/eink-reader-cli-probe "$DIST"/eink-reader-m0 "$DIST"/eink-reader "$DIST"/render-worker 2>/dev/null || true
 ls -lh "$DIST"
+echo
+echo "KUAL extension staged in $EXT"
 echo
 echo "Staged in $DIST. Nothing has been sent to or run on the device."
