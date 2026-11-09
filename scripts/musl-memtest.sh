@@ -16,7 +16,7 @@ for line in sys.stdin:
     except ValueError:
         continue
     if m.get("reason") == "compiler-artifact" and m.get("executable") \
-            and m["profile"]["test"] and "host_workload" in m["executable"]:
+            and m["profile"]["test"] and "/mem01-" in m["executable"]:
         print(m["executable"])
 ' > "$LIST"
-EINK_MEM_TURNS="$TURNS" "$(head -n 1 "$LIST")" mem01 --nocapture
+EINK_MEM_TURNS="$TURNS" "$(head -n 1 "$LIST")" --nocapture

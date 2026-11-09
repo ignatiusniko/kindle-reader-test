@@ -17,7 +17,7 @@ scripts/check.sh
 | Progress resumes after exit | `controller … first_open_then_resume_in_one_step`, UI flow test |
 | Bad metadata never deletes files | `persistence … corrupt_state_is_moved_aside_not_deleted` |
 | CBZ-01 12-page JPEG sample | `host_workload::cbz01_…` |
-| MEM-01 500 turns, bounded | `host_workload::mem01_…` (set `EINK_MEM_TURNS=4000` for longer) |
+| MEM-01 500 turns, bounded | `tests/mem01.rs` (own process; set `EINK_MEM_TURNS=4000` for longer) |
 | MEM-02 huge image | `host_workload::mem02_…` |
 | ERR-01 corrupt page / bad zip / zip bomb | `host_workload::err01_…` |
 | ISO-01 worker killed, retry once, UI alive | `render-worker/tests/isolation.rs` |
