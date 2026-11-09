@@ -26,11 +26,37 @@ LOCK="$DIR/logs/launcher.lock"
 UI_PROCS="${UI_PROCS:-awesome cvm KPPMainApp}"
 mkdir -p "$DIR/logs"
 
+# Terminate KOReader before we claim the framebuffer. A best-effort signal
+# is not enough: if KOReader remains alive, its input grab and framebuffer
+# writes can interfere with our app. Never force-kill it automatically:
+# SIGKILL could lose reading progress or interrupt KOReader's cleanup.
+stop_koreader() {
+    pids="$(pidof reader.lua 2>/dev/null || true)"
+    [ -n "$pids" ] || return 0
+    echo "$(date) KOReader detected (reader.lua pid(s): $pids); requesting shutdown" >>"$LOG"
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+
+    # 50 x 0.1s = 5 seconds, configurable for host tests.
+    tries=0
+    max_tries="${KOREADER_STOP_TRIES:-50}"
+    while pidof reader.lua >/dev/null 2>&1; do
+        if [ "$tries" -ge "$max_tries" ]; then
+            echo "KOReader is still running. Refusing display hand-off; exit KOReader manually." >&2
+            echo "$(date) KOReader failed to exit; launch aborted" >>"$LOG"
+            return 1
+        fi
+        sleep 0.1
+        tries=$((tries + 1))
+    done
+    # Allow KOReader's shell launcher time to finish its own device cleanup.
+    sleep 1
+    echo "$(date) KOReader stopped; continuing display hand-off" >>"$LOG"
+    return 0
+}
+
 handoff_display() {
-    if pidof reader.lua >/dev/null 2>&1; then
-        kill $(pidof reader.lua) 2>/dev/null
-        sleep 1
-    fi
+    stop_koreader || return 1
     lipc-set-prop com.lab126.pillow disableEnablePillow disable 2>/dev/null
     # shellcheck disable=SC2086
     killall -STOP $UI_PROCS 2>/dev/null
